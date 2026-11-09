@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>提醒設定</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: var(--tg-theme-secondary-bg-color, #f1efe9);
+  --paper: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #fffdf8));
+  --ink: var(--tg-theme-text-color, #1f1d1a);
+  --hint: var(--tg-theme-hint-color, #8a8478);
+  --accent: var(--tg-theme-button-color, #c8452f);
+  --accent-ink: var(--tg-theme-button-text-color, #ffffff);
+  --link: var(--tg-theme-link-color, #c8452f);
+  --red: var(--tg-theme-destructive-text-color, #d13a2b);
+  --line: color-mix(in srgb, var(--hint) 32%, transparent);
+  --wash: color-mix(in srgb, var(--hint) 14%, transparent);
+  --num: ui-serif, "Songti TC", "Noto Serif TC", "PMingLiU", Georgia, serif;
+  --sans: -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.tg) {
+    --bg: #17161a; --paper: #232226; --ink: #f0ede6; --hint: #8f8b84;
+    --accent: #e8664e; --link: #ee8672; --red: #ef6a5a;
+  }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); }
+body { font: 16px/1.5 var(--sans); padding-bottom: calc(88px + env(safe-area-inset-bottom)); overflow-wrap: anywhere; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#app { max-width: 560px; margin: 0 auto; padding: 0 16px; }
+
+/* 撕頁日曆的表頭 */
+.leaf { display: flex; align-items: flex-end; gap: 14px; padding: 20px 2px 14px; border-bottom: 3px double var(--line); margin-bottom: 16px; }
+.leaf .day { font: 700 60px/0.85 var(--num); font-variant-numeric: tabular-nums; letter-spacing: -2px; }
+.leaf .day.sun { color: var(--red); }
+.leaf .meta { font-size: 13px; color: var(--hint); line-height: 1.35; }
+.leaf .chat { flex: 1; min-width: 0; text-align: right; }
+.leaf .chat b { display: block; font-size: 17px; line-height: 1.3; }
+.leaf .chat span { font-size: 13px; color: var(--hint); }
+
+.banner { font-size: 14px; background: var(--wash); border-radius: 8px; padding: 9px 12px; margin-bottom: 14px; }
+.empty { text-align: center; color: var(--hint); padding: 34px 0 26px; }
+.empty b { display: block; font: 600 22px var(--num); color: var(--ink); margin-bottom: 4px; }
+
+.field { background: var(--paper); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+.field > label, .label { display: block; font-size: 13px; color: var(--hint); margin-bottom: 8px; }
+textarea, input[type=time], input[type=date], select { width: 100%; background: var(--wash); border: 0; border-radius: 8px; padding: 10px 12px; }
+textarea { min-height: 96px; resize: vertical; display: block; }
+.count { font-size: 12px; color: var(--hint); text-align: right; margin-top: 4px; }
+.count.over { color: var(--red); }
+.seg { display: grid; grid-template-columns: repeat(5, 1fr); background: var(--wash); border-radius: 9px; padding: 3px; gap: 2px; }
+.seg button { font-size: 13px; padding: 8px 0; border-radius: 7px; color: var(--hint); }
+.seg button.on { background: var(--paper); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.14); }
+@media (max-width: 359px) { .seg button { font-size: 12px; letter-spacing: -.5px; } }
+.panel { margin-top: 14px; }
+.chips { display: grid; gap: 6px; grid-template-columns: repeat(7, 1fr); }
+.chip { height: 40px; border-radius: 8px; background: var(--wash); font-variant-numeric: tabular-nums; }
+.chip.wide { grid-column: span 4; }
+.chip.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.step { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 15px; }
+.step button { width: 36px; height: 36px; border-radius: 8px; background: var(--wash); font-size: 18px; }
+.step button:disabled { opacity: .4; }
+.step b { font: 700 20px var(--num); min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; }
+.opt { display: flex; gap: 6px; margin-top: 10px; }
+.opt button { flex: 1; font-size: 13px; padding: 9px 4px; border-radius: 8px; background: var(--wash); }
+.opt button.on { background: var(--accent); color: var(--accent-ink); }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* 日曆 */
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cal-head b { font: 700 18px var(--num); }
+.cal-head button { width: 40px; height: 36px; border-radius: 8px; background: var(--wash); font-size: 16px; }
+.cal-head button:disabled { opacity: .3; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.cal .dow { text-align: center; font-size: 12px; color: var(--hint); padding: 2px 0 4px; }
+.cal .dow.sun, .cal .cell.sun { color: var(--red); }
+.cell { aspect-ratio: 1; min-height: 40px; border-radius: 50%; font: 500 16px var(--num); font-variant-numeric: tabular-nums; }
+.cell:disabled { opacity: .3; }
+.cell.today { box-shadow: inset 0 0 0 1.5px var(--line); }
+.cal .cell.on { background: var(--accent); color: var(--accent-ink); transform: rotate(-4deg); }
+.picked { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; align-items: center; }
+.picked span.n { font-size: 13px; color: var(--hint); width: 100%; display: flex; justify-content: space-between; }
+.picked button.d { font-size: 13px; padding: 4px 9px; border-radius: 14px; background: var(--wash); font-variant-numeric: tabular-nums; }
+.linkish { color: var(--link); font-size: 13px; }
+
+.say { font: 600 16px var(--num); padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--paper); border-radius: 0 10px 10px 0; margin-bottom: 12px; }
+.err { color: var(--red); font-size: 14px; margin-bottom: 12px; }
+.long { font-size: 13px; color: var(--hint); margin-top: 6px; }
+
+#fallback { position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--bg); }
+#fallback button { display: block; width: 100%; max-width: 528px; margin: 0 auto; padding: 14px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+#toast { position: fixed; left: 16px; right: 16px; bottom: calc(84px + env(safe-area-inset-bottom)); max-width: 528px; margin: 0 auto; background: var(--ink); color: var(--paper); padding: 11px 14px; border-radius: 9px; font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .2s; }
+#toast.on { opacity: 1; }
+#preview { white-space: pre-wrap; font-size: 12px; background: var(--paper); padding: 12px; border-radius: 8px; margin-top: 12px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="fallback" hidden><button id="fallback-btn"></button></div>
+<div id="toast" role="status"></div>
+<script>
+(function () {
+  "use strict";
+  var FORM_VERSION = 1, MAX_BYTES = 4096, MAX_TEXT_BYTES = 3800, MAX_DATES = 60;
+  var KINDS = [["d", "每天"], ["w", "每週"], ["m", "每月"], ["y", "每年"], ["o", "指定日期"]];
+  var WEEK = "一二三四五六日";
+  var INTERVAL_MAX = { d: 365, w: 52, m: 12 };
+  var INTERVAL_UNIT = { d: "天", w: "週", m: "個月" };
+  var ZONES = [["Asia/Taipei", "台北"], ["Asia/Tokyo", "東京"], ["Asia/Seoul", "首爾"], ["Asia/Hong_Kong", "香港"],
+    ["Asia/Shanghai", "上海"], ["Asia/Singapore", "新加坡"], ["Asia/Bangkok", "曼谷"], ["Australia/Sydney", "雪梨"],
+    ["Europe/London", "倫敦"], ["Europe/Paris", "巴黎"], ["America/New_York", "紐約"], ["America/Chicago", "芝加哥"],
+    ["America/Denver", "丹佛"], ["America/Los_Angeles", "洛杉磯"], ["UTC", "UTC"]];
+
+  var tg = window.Telegram && window.Telegram.WebApp;
+  // 不能用 initData 判斷：鍵盤按鈕開的 Mini App 的 initData 是空的
+  var inTg = !!(tg && tg.platform && tg.platform !== "unknown");
+  var app = document.getElementById("app");
+
+  function can(v) { return inTg && tg.isVersionAtLeast && tg.isVersionAtLeast(v); }
+
+  // ---- 工具 ----
+  function h(tag, props) {
+    var el = document.createElement(tag);
+    Object.keys(props || {}).forEach(function (k) {
+      var v = props[k];
+      if (k === "class") el.className = v;
+      else if (k.slice(0, 2) === "on") el.addEventListener(k.slice(2), v);
+      else if (k === "disabled" || k === "hidden" || k === "selected") el[k] = !!v;
+      else if (k === "value") el.value = v;
+      else if (v != null) el.setAttribute(k, v);
+    });
+    for (var i = 2; i < arguments.length; i++) add(el, arguments[i]);
+    return el;
+  }
+  function add(el, kid) {
+    if (kid == null || kid === false) return;
+    if (Array.isArray(kid)) kid.forEach(function (x) { add(el, x); });
+    else el.appendChild(typeof kid === "object" ? kid : document.createTextNode(String(kid)));
+  }
+  function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+  function bytes(s) { return new TextEncoder().encode(s).length; }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function haptic() { if (can("6.1")) try { tg.HapticFeedback.selectionChanged(); } catch (e) {} }
+
+  var toastTimer;
+  function toast(msg) {
+    var t = document.getElementById("toast");
+    t.textContent = msg; t.classList.add("on");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.remove("on"); }, 3200);
+  }
+
+  function decodeState(s) {
+    s = s.replace(/-/g, "+").replace(/_/g, "/");
+    while (s.length % 4) s += "=";
+    var bin = atob(s), arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return JSON.parse(new TextDecoder().decode(arr));
+  }
+
+  function nowIn(tz) {
+    var parts = {};
+    new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date())
+      .forEach(function (p) { parts[p.type] = p.value; });
+    return { date: parts.year + parts.month + parts.day, hm: parts.hour + ":" + parts.minute };
+  }
+  function ymd(s) { return { y: +s.slice(0, 4), m: +s.slice(4, 6), d: +s.slice(6, 8) }; }
+  function pack(y, m, d) { return "" + y + pad(m) + pad(d); }
+  function dim(y, m) { return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
+  function dowOf(s) { var p = ymd(s); return new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay(); } // 0=日
+  function mon0(s) { return (dowOf(s) + 6) % 7; } // 0=一，跟 bot 端一致
+  function shortDate(s, thisYear) { var p = ymd(s); return (p.y === thisYear ? "" : p.y + "/") + p.m + "/" + p.d; }
+  function dashed(s) { return s.slice(0, 4) + "-" + s.slice(4, 6) + "-" + s.slice(6, 8); }
+  function undashed(s) { return s.replace(/-/g, ""); }
+
+  function describe(r) {
+    var g = r.g || 1, head;
+    if (r.k === "d") head = g === 1 ? "每天" : "每 " + g + " 天";
+    else if (r.k === "w") {
+      var names = r.w.slice().sort().map(function (x) { return WEEK[x]; }).join("、");
+      head = (g === 1 ? "每週" : "每 " + g + " 週的週") + (names || "（尚未選擇）");
+    } else if (r.k === "m") {
+      var list = r.m.slice().sort(function (a, b) { return (a < 0 ? 99 : a) - (b < 0 ? 99 : b); })
+        .map(function (x) { return x < 0 ? "月底" : x + " 號"; }).join("、");
+      head = (g === 1 ? "每月 " : "每 " + g + " 個月的 ") + (list || "（尚未選擇）");
+    } else if (r.k === "y") head = "每年 " + r.y[0] + "/" + r.y[1];
+    else {
+      var now = nowIn(r.z), yr = +now.date.slice(0, 4), up = r.d.filter(function (x) { return x >= now.date; }).sort();
+      if (!up.length) head = "尚未選擇日期";
+      else if (up.length <= 3) head = "指定 " + up.map(function (x) { return shortDate(x, yr); }).join("、");
+      else head = "指定 " + up.length + " 個日期（" + shortDate(up[0], yr) + "～" + shortDate(up[up.length - 1], yr) + "）";
+    }
+    return head + " " + r.h;
+  }
+  function schedPart(r) {
+    var o = { k: r.k, h: r.h, z: r.z };
+    if (r.s) o.s = r.s;
+    if (INTERVAL_MAX[r.k] && (r.g || 1) !== 1) o.g = r.g;
+    if (r.k === "w") o.w = r.w.slice().sort();
+    if (r.k === "m") { o.m = r.m.slice().sort(function (a, b) { return a - b; }); if (r.q === "s") o.q = "s"; }
+    if (r.k === "y") { o.y = r.y; if (r.q === "s") o.q = "s"; }
+    if (r.k === "o") o.d = r.d.slice().sort();
+    return o;
+  }
+  function usesShort(r) {
+    if (r.k === "m") return r.m.some(function (x) { return x >= 29; });
+    return r.k === "y" && r.y[0] === 2 && r.y[1] === 29;
+  }
+  function validate(r, text, isEdit) {
+    if (!isEdit && !text.trim()) return "請填寫提醒內容。";
+    if (bytes(text) > MAX_TEXT_BYTES) return "內容太長了，最多約 1,200 個中文字。";
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(r.h || "")) return "請選擇時間。";
+    if (r.k === "w" && !r.w.length) return "請至少選一個星期。";
+    if (r.k === "m" && !r.m.length) return "請至少選一天。";
+    if (r.k === "o") {
+      if (!r.d.length) return "請在日曆上至少點一個日期。";
+      if (r.d.length > MAX_DATES) return "指定日期最多 " + MAX_DATES + " 個。";
+      var now = nowIn(r.z);
+      var future = r.d.some(function (d) { return d > now.date || (d === now.date && r.h > now.hm); });
+      if (!future) return "選的日期時間都已經過去了。";
+    }
+    return null;
+  }
+
+  // ---- 狀態 ----
+  var state = null;
+  try {
+    var raw = new URLSearchParams(location.search).get("s");
+    if (raw) state = decodeState(raw);
+  } catch (e) { state = null; }
+  var preview = !inTg;
+  if (!state && preview) state = { v: FORM_VERSION, c: 1, n: "預覽（未連線到 bot）", tz: "Asia/Taipei" };
+
+  var text = "", calView = null, dirty = false;
+  var isEdit = !!(state && state.r);
+  var draft = null;
+  if (state) {
+    var tz0 = (state.r && state.r.z) || state.tz, today0 = nowIn(tz0).date, src = state.r || {};
+    draft = {
+      k: src.k || "d", h: src.h || "08:00", z: tz0, g: src.g || 1, s: src.s || today0, q: src.q,
+      w: src.w || [mon0(today0)], m: src.m || [ymd(today0).d], y: src.y || [ymd(today0).m, ymd(today0).d], d: src.d || []
+    };
+    var first = draft.d.slice().sort()[0], base = ymd(first || today0);
+    calView = { y: base.y, m: base.m };
+  }
+
+  function markDirty() {
+    if (!dirty && can("6.2")) tg.enableClosingConfirmation();
+    dirty = true;
+  }
+  function nonce() {
+    var a = new Uint8Array(12); crypto.getRandomValues(a);
+    return Array.prototype.map.call(a, function (x) { return pad(x.toString(16)); }).join("");
+  }
+
+  // ---- 底部主按鈕 ----
+  function setMain(label, fn) {
+    if (inTg) {
+      tg.MainButton.setText(label); tg.MainButton.onClick(fn); tg.MainButton.show();
+    } else {
+      var fb = document.getElementById("fallback"), btn = document.getElementById("fallback-btn");
+      fb.hidden = false; btn.textContent = label; btn.onclick = fn;
+    }
+  }
+
+  // ---- 畫面 ----
+  function render() {
+    var tz = state ? state.tz : "Asia/Taipei", now = nowIn(tz), p = ymd(now.date), dow = dowOf(now.date);
+    var weekName = "日一二三四五六"[dow];
+    add(app, h("header", { class: "leaf" },
+      h("div", { class: "day" + (dow === 0 ? " sun" : "") }, pad(p.d)),
+      h("div", { class: "meta" }, p.y + " 年", h("br"), p.m + " 月・週" + weekName),
+      h("div", { class: "chat" }, h("b", null, state ? state.n : "提醒設定"), h("span", null, isEdit ? "編輯提醒" : "新增提醒"))));
+    if (!state) {
+      add(app, h("div", { class: "empty" }, h("b", null, "打不開這一頁"), "請回到 bot，點下方鍵盤的按鈕重新開啟。"));
+      return;
+    }
+    if (preview) add(app, h("div", { class: "banner" }, "目前在瀏覽器預覽，資料不會真的送出。"));
+
+    var d = draft;
+    var sayEl = h("div", { class: "say" });
+    var errEl = h("div", { class: "err", hidden: true });
+    var counter = h("div", { class: "count" });
+    function refreshSay() { sayEl.textContent = describe(d); }
+    function refreshCount() {
+      var n = bytes(text), over = n > MAX_TEXT_BYTES;
+      counter.className = "count" + (over ? " over" : "");
+      counter.textContent = n > MAX_TEXT_BYTES * 0.7 ? n + "／" + MAX_TEXT_BYTES + " bytes" : "";
+    }
+    var area = h("textarea", { id: "text", maxlength: 4000,
+      placeholder: isEdit ? "留空就保留原本的內容" : "時間到要發什麼訊息？",
+      oninput: function (ev) { text = ev.target.value; markDirty(); refreshCount(); } });
+
+    var panel = h("div", { class: "panel" });
+    function drawPanel() {
+      clear(panel);
+      add(panel, schedulePanel(d, function () { markDirty(); drawPanel(); }));
+      refreshSay();
+    }
+    var seg = h("div", { class: "seg" }, KINDS.map(function (pair) {
+      return h("button", { class: d.k === pair[0] ? "on" : "", onclick: function () {
+        d.k = pair[0];
+        if (INTERVAL_MAX[d.k] && d.g > INTERVAL_MAX[d.k]) d.g = 1;
+        if (!INTERVAL_MAX[d.k]) d.g = 1;
+        haptic(); markDirty();
+        Array.prototype.forEach.call(seg.children, function (b, i) { b.className = KINDS[i][0] === d.k ? "on" : ""; });
+        drawPanel();
+      } }, pair[1]);
+    }));
+
+    add(app, h("section", null,
+      h("div", { class: "field" }, h("label", { for: "text" }, "內容"), area, counter,
+        isEdit ? h("div", { class: "long" }, "原本的內容在聊天訊息裡。要修改才填，留空會保留原文。") : null),
+      h("div", { class: "field" }, h("div", { class: "label" }, "頻率"), seg, panel),
+      h("div", { class: "field row" },
+        h("div", null, h("label", { for: "time", class: "label" }, "時間"),
+          h("input", { id: "time", type: "time", value: d.h, oninput: function (ev) { d.h = ev.target.value; markDirty(); refreshSay(); } })),
+        h("div", null, h("label", { for: "tz", class: "label" }, "時區"),
+          h("select", { id: "tz", onchange: function (ev) { d.z = ev.target.value; markDirty(); drawPanel(); } }, zoneOptions(d.z)))),
+      sayEl, errEl));
+    refreshCount();
+    drawPanel();
+    setMain(isEdit ? "儲存修改" : "建立提醒", function () { save(errEl); });
+  }
+
+  function save(errEl) {
+    var msg = validate(draft, text, isEdit);
+    if (msg) { errEl.textContent = msg; errEl.hidden = false; errEl.scrollIntoView({ block: "center" }); toast(msg); return; }
+    errEl.hidden = true;
+    var op = Object.assign(isEdit ? { a: "upd", i: state.r.i, e: state.r.e } : { a: "add" }, schedPart(draft));
+    if (text.trim()) op.t = text.trim();
+    var data = JSON.stringify({ v: FORM_VERSION, c: state.c, n: nonce(), ops: [op] });
+    var size = bytes(data);
+    if (size > MAX_BYTES) { toast("資料太長（" + size + "／" + MAX_BYTES + " bytes），請縮短內容或減少日期。"); return; }
+    if (preview) {
+      var pre = document.getElementById("preview") || h("pre", { id: "preview" });
+      pre.textContent = data;
+      app.appendChild(pre);
+      toast("預覽模式：已顯示會送出的資料。");
+      return;
+    }
+    try {
+      if (can("6.2")) tg.disableClosingConfirmation();
+      tg.sendData(data); // 成功後 Telegram 會自動關閉視窗
+    } catch (e) {
+      toast("送出失敗。請回到 bot，從鍵盤上的按鈕重新開啟。");
+    }
+  }
+
+  function zoneOptions(current) {
+    var list = ZONES.slice(), device = "";
+    try { device = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) {}
+    [[device, "這台裝置"], [current, current]].forEach(function (x) {
+      if (x[0] && !list.some(function (z) { return z[0] === x[0]; })) list.push([x[0], x[1] === x[0] ? x[0] : x[1] + "（" + x[0] + "）"]);
+    });
+    return list.map(function (z) { return h("option", { value: z[0], selected: z[0] === current }, z[1]); });
+  }
+
+  function schedulePanel(d, redraw) {
+    var out = [];
+    if (INTERVAL_MAX[d.k]) out.push(stepper(d, redraw));
+    if ((d.g || 1) > 1 && INTERVAL_MAX[d.k]) {
+      out.push(h("div", { style: "margin-bottom:12px" }, h("label", { class: "label", for: "anchor" }, "從哪一天開始算"),
+        h("input", { id: "anchor", type: "date", value: dashed(d.s), onchange: function (ev) { if (ev.target.value) { d.s = undashed(ev.target.value); redraw(); } } })));
+    }
+    if (d.k === "w") out.push(h("div", { class: "chips" }, [0, 1, 2, 3, 4, 5, 6].map(function (w) {
+      return toggleChip(WEEK[w], d.w.indexOf(w) >= 0, function () { toggle(d.w, w); redraw(); });
+    })));
+    if (d.k === "m") {
+      var cells = [];
+      for (var v = 1; v <= 31; v++) (function (x) { cells.push(toggleChip(x, d.m.indexOf(x) >= 0, function () { toggle(d.m, x); redraw(); })); })(v);
+      var last = toggleChip("月底", d.m.indexOf(-1) >= 0, function () { toggle(d.m, -1); redraw(); });
+      last.classList.add("wide");
+      cells.push(last);
+      out.push(h("div", { class: "chips" }, cells));
+    }
+    if (d.k === "y") {
+      var months = [], days = [], maxDay = dim(2024, d.y[0]);
+      for (var mo = 1; mo <= 12; mo++) months.push(h("option", { value: mo, selected: mo === d.y[0] }, mo + " 月"));
+      for (var da = 1; da <= maxDay; da++) days.push(h("option", { value: da, selected: da === d.y[1] }, da + " 日"));
+      out.push(h("div", { class: "row" },
+        h("select", { "aria-label": "月", onchange: function (ev) { d.y[0] = +ev.target.value; d.y[1] = Math.min(d.y[1], dim(2024, d.y[0])); redraw(); } }, months),
+        h("select", { "aria-label": "日", onchange: function (ev) { d.y[1] = +ev.target.value; redraw(); } }, days)));
+    }
+    if (usesShort(d)) out.push(h("div", null,
+      h("div", { class: "label", style: "margin:12px 0 0" }, "遇到沒有這一天的月份"),
+      h("div", { class: "opt" },
+        h("button", { class: d.q !== "s" ? "on" : "", onclick: function () { d.q = undefined; redraw(); } }, "改在月底發"),
+        h("button", { class: d.q === "s" ? "on" : "", onclick: function () { d.q = "s"; redraw(); } }, "當月跳過"))));
+    if (d.k === "o") out.push(calendar(d, redraw));
+    return out;
+  }
+  function toggle(list, value) {
+    var i = list.indexOf(value);
+    if (i >= 0) list.splice(i, 1); else list.push(value);
+    haptic();
+  }
+  function toggleChip(label, on, fn) {
+    return h("button", { class: "chip" + (on ? " on" : ""), "aria-pressed": on ? "true" : "false", onclick: fn }, label);
+  }
+  function stepper(d, redraw) {
+    var max = INTERVAL_MAX[d.k], g = d.g || 1;
+    return h("div", { class: "step" }, "每",
+      h("button", { disabled: g <= 1, "aria-label": "減少", onclick: function () { d.g = g - 1; redraw(); } }, "−"),
+      h("b", null, g),
+      h("button", { disabled: g >= max, "aria-label": "增加", onclick: function () { d.g = g + 1; redraw(); } }, "＋"),
+      INTERVAL_UNIT[d.k]);
+  }
+
+  function calendar(d, redraw) {
+    var today = nowIn(d.z).date, t = ymd(today), v = calView;
+    var atStart = v.y === t.y && v.m === t.m;
+    function shift(delta) {
+      var m = v.m + delta;
+      calView = { y: v.y + Math.floor((m - 1) / 12), m: ((m - 1) % 12 + 12) % 12 + 1 };
+    }
+    var head = h("div", { class: "cal-head" },
+      h("button", { disabled: atStart, "aria-label": "上個月", onclick: function () { shift(-1); redraw(); } }, "‹"),
+      h("b", null, v.y + " 年 " + v.m + " 月"),
+      h("button", { "aria-label": "下個月", onclick: function () { shift(1); redraw(); } }, "›"));
+    var grid = h("div", { class: "cal" });
+    "日一二三四五六".split("").forEach(function (n, i) { add(grid, h("div", { class: "dow" + (i === 0 ? " sun" : "") }, n)); });
+    var lead = new Date(Date.UTC(v.y, v.m - 1, 1)).getUTCDay();
+    for (var i = 0; i < lead; i++) add(grid, h("div"));
+    var total = dim(v.y, v.m);
+    for (var day = 1; day <= total; day++) (function (x) {
+      var s = pack(v.y, v.m, x), on = d.d.indexOf(s) >= 0, past = s < today;
+      add(grid, h("button", { class: "cell" + (dowOf(s) === 0 ? " sun" : "") + (s === today ? " today" : "") + (on ? " on" : ""),
+        disabled: past, "aria-pressed": on ? "true" : "false", "aria-label": dashed(s), onclick: function () {
+          if (!on && d.d.length >= MAX_DATES) { toast("指定日期最多 " + MAX_DATES + " 個。"); return; }
+          toggle(d.d, s); redraw();
+        } }, x));
+    })(day);
+    var sorted = d.d.slice().sort(), yr = t.y;
+    var chips = h("div", { class: "picked" },
+      h("span", { class: "n" }, "已選 " + sorted.length + " 天",
+        sorted.length ? h("button", { class: "linkish", onclick: function () { d.d.length = 0; redraw(); } }, "全部清除") : null),
+      sorted.map(function (s) {
+        return h("button", { class: "d", "aria-label": "移除 " + dashed(s), onclick: function () { toggle(d.d, s); redraw(); } }, shortDate(s, yr) + " ✕");
+      }));
+    return [head, grid, chips];
+  }
+
+  // ---- 開機 ----
+  if (inTg) {
+    document.documentElement.classList.add("tg");
+    // 時間選擇器、下拉選單等原生元件也要跟 Telegram 的深淺色，不是跟系統
+    var syncScheme = function () { if (tg.colorScheme) document.documentElement.style.colorScheme = tg.colorScheme; };
+    syncScheme();
+    if (tg.onEvent) tg.onEvent("themeChanged", syncScheme);
+    tg.ready();
+    tg.expand();
+    if (can("6.1")) { try { tg.setHeaderColor("secondary_bg_color"); tg.setBackgroundColor("secondary_bg_color"); } catch (e) {} }
+  }
+  render();
+})();
+</script>
+</body>
+</html>
