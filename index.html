@@ -78,7 +78,8 @@ textarea { min-height: 96px; resize: vertical; display: block; }
 .cal-head b { font: 700 18px var(--num); }
 .cal-head button { width: 40px; height: 36px; border-radius: 8px; background: var(--wash); font-size: 16px; }
 .cal-head button:disabled { opacity: .3; }
-.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.cal-hint { font-size: 12px; color: var(--hint); text-align: center; margin-top: 8px; }
 .cal .dow { text-align: center; font-size: 12px; color: var(--hint); padding: 2px 0 4px; }
 .cal .dow.sun, .cal .cell.sun { color: var(--red); }
 .cell { aspect-ratio: 1; min-height: 40px; border-radius: 50%; font: 500 16px var(--num); font-variant-numeric: tabular-nums; }
@@ -435,19 +436,120 @@ textarea { min-height: 96px; resize: vertical; display: block; }
     for (var day = 1; day <= total; day++) (function (x) {
       var s = pack(v.y, v.m, x), on = d.d.indexOf(s) >= 0, past = s < today;
       add(grid, h("button", { class: "cell" + (dowOf(s) === 0 ? " sun" : "") + (s === today ? " today" : "") + (on ? " on" : ""),
-        disabled: past, "aria-pressed": on ? "true" : "false", "aria-label": dashed(s), onclick: function () {
+        disabled: past, "aria-pressed": on ? "true" : "false", "aria-label": dashed(s), "data-d": s, onclick: function () {
+          if (suppressClick) return; // 長按拖選放開時瀏覽器補發的 click，不算點選
           if (!on && d.d.length >= MAX_DATES) { toast("指定日期最多 " + MAX_DATES + " 個。"); return; }
           toggle(d.d, s); redraw();
         } }, x));
     })(day);
+    attachDrag(grid, d, redraw);
+    var hint = h("div", { class: "cal-hint" }, "長按一天再拖曳，可一次選取或取消連續多天");
     var sorted = d.d.slice().sort(), yr = t.y;
     var chips = h("div", { class: "picked" },
-      h("span", { class: "n" }, "已選 " + sorted.length + " 天",
+      h("span", { class: "n" }, h("span", { id: "picked-count" }, "已選 " + sorted.length + " 天"),
         sorted.length ? h("button", { class: "linkish", onclick: function () { d.d.length = 0; redraw(); } }, "全部清除") : null),
       sorted.map(function (s) {
         return h("button", { class: "d", "aria-label": "移除 " + dashed(s), onclick: function () { toggle(d.d, s); redraw(); } }, shortDate(s, yr) + " ✕");
       }));
-    return [head, grid, chips];
+    return [head, grid, hint, chips];
+  }
+
+  // 長按拖選：拖曳途中不可重畫日曆——觸控事件綁在按下的那顆按鈕上，元素被換掉事件就斷了。
+  // 所以途中只改 class，放開才 redraw。
+  var suppressClick = false, lastTouch = 0;
+  var LONG_PRESS_MS = 350, MOVE_TOLERANCE = 10;
+  function attachDrag(grid, d, redraw) {
+    var timer = null, origin = null, drag = null;
+
+    function cellAt(x, y) {
+      var el = document.elementFromPoint(x, y);
+      var cell = el && el.closest ? el.closest(".cell") : null;
+      return cell && grid.contains(cell) && !cell.disabled ? cell : null;
+    }
+    function cancelTimer() { if (timer) { clearTimeout(timer); timer = null; } }
+    function paint() {
+      var low = drag.anchor < drag.current ? drag.anchor : drag.current;
+      var high = drag.anchor < drag.current ? drag.current : drag.anchor;
+      var range = Array.prototype.map.call(grid.querySelectorAll(".cell:not(:disabled)"), function (c) { return c.getAttribute("data-d"); })
+        .filter(function (s) { return s >= low && s <= high; });
+      if (drag.current < drag.anchor) range.reverse(); // 額滿時保留離起點近的日期
+      var next = drag.base.slice();
+      range.forEach(function (s) {
+        var i = next.indexOf(s);
+        if (drag.remove) { if (i >= 0) next.splice(i, 1); return; }
+        if (i >= 0) return;
+        if (next.length >= MAX_DATES) {
+          if (!drag.warned) { drag.warned = true; toast("指定日期最多 " + MAX_DATES + " 個。"); }
+          return;
+        }
+        next.push(s);
+      });
+      d.d.length = 0;
+      Array.prototype.push.apply(d.d, next);
+      Array.prototype.forEach.call(grid.querySelectorAll(".cell"), function (c) {
+        var on = d.d.indexOf(c.getAttribute("data-d")) >= 0;
+        c.classList.toggle("on", on);
+        c.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      var counter = document.getElementById("picked-count");
+      if (counter) counter.textContent = "已選 " + d.d.length + " 天";
+    }
+    function begin(cell) {
+      var s = cell.getAttribute("data-d");
+      drag = { anchor: s, current: s, base: d.d.slice(), remove: d.d.indexOf(s) >= 0, warned: false };
+      haptic();
+      paint();
+    }
+    function press(x, y) {
+      var cell = cellAt(x, y);
+      if (!cell) return;
+      origin = { x: x, y: y };
+      cancelTimer();
+      timer = setTimeout(function () { timer = null; begin(cell); }, LONG_PRESS_MS);
+    }
+    function move(x, y) {
+      if (drag) {
+        var cell = cellAt(x, y), s = cell && cell.getAttribute("data-d");
+        if (s && s !== drag.current) { drag.current = s; haptic(); paint(); }
+      } else if (timer && Math.abs(x - origin.x) + Math.abs(y - origin.y) > MOVE_TOLERANCE) {
+        cancelTimer(); // 手指先動了：這是捲動，不是長按
+      }
+    }
+    function release() {
+      cancelTimer();
+      if (!drag) return;
+      drag = null;
+      suppressClick = true;
+      setTimeout(function () { suppressClick = false; }, 450);
+      redraw();
+    }
+
+    grid.addEventListener("contextmenu", function (ev) { ev.preventDefault(); });
+    grid.addEventListener("touchstart", function (ev) {
+      lastTouch = Date.now();
+      if (ev.touches.length !== 1) { cancelTimer(); return; }
+      press(ev.touches[0].clientX, ev.touches[0].clientY);
+    }, { passive: true });
+    grid.addEventListener("touchmove", function (ev) {
+      if (drag) ev.preventDefault(); // 拖選中不捲動頁面；必須是 non-passive
+      move(ev.touches[0].clientX, ev.touches[0].clientY);
+    }, { passive: false });
+    grid.addEventListener("touchend", function () { lastTouch = Date.now(); release(); });
+    grid.addEventListener("touchcancel", function () { lastTouch = Date.now(); release(); });
+
+    // 電腦版 Telegram 用滑鼠
+    grid.addEventListener("mousedown", function (ev) {
+      if (ev.button !== 0 || Date.now() - lastTouch < 800) return; // 觸控後瀏覽器會補發滑鼠事件
+      press(ev.clientX, ev.clientY);
+      function onMove(e) { move(e.clientX, e.clientY); }
+      function onUp() {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+        release();
+      }
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
   }
 
   // ---- 開機 ----
@@ -459,6 +561,8 @@ textarea { min-height: 96px; resize: vertical; display: block; }
     if (tg.onEvent) tg.onEvent("themeChanged", syncScheme);
     tg.ready();
     tg.expand();
+    // 表單要捲動、日曆要拖選，往下滑不該把視窗關掉
+    if (can("7.7") && tg.disableVerticalSwipes) { try { tg.disableVerticalSwipes(); } catch (e) {} }
     if (can("6.1")) { try { tg.setHeaderColor("secondary_bg_color"); tg.setBackgroundColor("secondary_bg_color"); } catch (e) {} }
   }
   render();
